@@ -95,6 +95,47 @@ uv run mlx_lm.lora \
   --adapter-path ./adapters
 ```
 
+### GPUクラスタでの32B CPTモデル学習
+
+`tokyotech-llm/Qwen3-Swallow-32B-CPT-v0.2` をベースに、CUDA GPUクラスタ上でQLoRA SFTを実行するための
+Singularity定義とSLURMジョブを追加しています。学習データは同じ `data/osaka_data_v4` の
+`train.jsonl` / `valid.jsonl` を使います。
+
+```bash
+# Singularityイメージ作成
+singularity build singularity/qwen3_qlora.sif singularity/qwen3_qlora.def
+
+# SLURMに投入
+sbatch scripts/slurm/train_qwen3_swallow_32b_qlora.sbatch
+```
+
+主な既定値:
+
+| 項目 | 値 |
+|---|---|
+| ベースモデル | `tokyotech-llm/Qwen3-Swallow-32B-CPT-v0.2` |
+| 学習スクリプト | `scripts/train_qwen3_swallow_32b_qlora.py` |
+| 量子化 | 4bit NF4 + double quant (`bitsandbytes`) |
+| LoRA | r=8, alpha=20, dropout=0.0 |
+| max steps | 2,000 |
+| max seq length | 2,048 |
+| 出力先 | `outputs/qwen3_swallow_32b_cpt_qlora` |
+| HFキャッシュ | `hf_cache/` |
+
+SLURM資源や学習パラメータは環境変数で上書きできます。
+
+```bash
+MAX_STEPS=3000 \
+MAX_SEQ_LENGTH=4096 \
+PER_DEVICE_TRAIN_BATCH_SIZE=1 \
+GRADIENT_ACCUMULATION_STEPS=16 \
+SIF_IMAGE=/path/to/qwen3_qlora.sif \
+sbatch scripts/slurm/train_qwen3_swallow_32b_qlora.sbatch
+```
+
+クラスタによってGPU指定、パーティション名、メモリ指定が異なるため、必要に応じて
+`scripts/slurm/train_qwen3_swallow_32b_qlora.sbatch` の `#SBATCH` 行を調整してください。
+
 ## プロジェクト構成
 
 ```
@@ -114,7 +155,12 @@ LLM_kansai/
 │   ├── step1_4_format_data.py        # JSONL整形
 │   ├── clean_data_v2.py              # データクリーニング
 │   ├── enhance_diversity.py          # 語尾多様性強化
-│   └── eval_v4.py                    # 包括的評価
+│   ├── eval_v4.py                    # 包括的評価
+│   ├── train_qwen3_swallow_32b_qlora.py # CUDAクラスタ向け32B QLoRA学習
+│   └── slurm/
+│       └── train_qwen3_swallow_32b_qlora.sbatch # Singularity + SLURM投入
+├── singularity/
+│   └── qwen3_qlora.def               # CUDA学習用Singularity定義
 ├── chat.py                 # 対話スクリプト (repetition_penalty対応)
 ├── main.py
 ├── pyproject.toml
